@@ -3,6 +3,10 @@ var path = require('path');
 var EventEmitter = require('events').EventEmitter;
 var Seq = require('seq');
 
+// allow exists and existsSync to work in Node 0.8+ (fs) and prior (path)
+var exists = (fs.exists) ? fs.exists : path.exists; // node 0.8 moved to fs
+var existsSync = (fs.existsSync) ? fs.existsSync : path.existsSync; // node 0.8 moved to fs
+
 function createInodeChecker() {
     var inodes = {};
     return function inodeSeen(inode) {
@@ -24,7 +28,7 @@ function find (base, options, cb) {
     }
     var em = new EventEmitter;
     var inodeSeen = createInodeChecker();
-    
+
     function finder (dir, f) {
         Seq()
             .seq(fs.readdir, dir, Seq)
@@ -40,19 +44,19 @@ function find (base, options, cb) {
             .seqEach(function (file) {
                 var stat = this.vars[file];
                 if (cb) cb(file, stat);
-                
+
                 if (inodeSeen(stat.ino)) {
                     // already seen this inode, probably a recursive symlink
                     this(null);
                 }
                 else {
                     em.emit('path', file, stat);
-                    
+
                     if (stat.isSymbolicLink()) {
                         em.emit('link', file, stat);
                         if (options && options.follow_symlinks) {
-                          path.exists(file, function(exists) {
-                            if (exists) {
+                          exists(file, function(fileExists) {
+                            if (fileExists) {
                               fs.readlink(file, function(err, resolvedPath) {
                                 if (err) {
                                   em.emit('error', err);
@@ -80,7 +84,7 @@ function find (base, options, cb) {
             .catch(em.emit.bind(em, 'error'))
         ;
     }
-    
+
     fs.lstat(base, function (err, s) {
         if (err) {
             em.emit('error', err);
@@ -99,7 +103,7 @@ function find (base, options, cb) {
             em.emit('end');
         }
     });
-    
+
     return em;
 };
 
@@ -121,7 +125,7 @@ exports.findSync = function findSync(dir, options, callback) {
         if (stat.isDirectory()) {
             fs.readdirSync(file).forEach(function(f) { fileQueue.push(path.join(file, f)); });
         } else if (stat.isSymbolicLink()) {
-            if (options && options.follow_symlinks && path.existsSync(file)) {
+            if (options && options.follow_symlinks && existsSync(file)) {
                 fileQueue.push(fs.realpathSync(file));
             }
         }
